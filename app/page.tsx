@@ -6,6 +6,7 @@ import ChatInterface from "@/components/ChatInterface";
 import MaterialSelector from "@/components/MaterialSelector";
 import QuoteDisplay from "@/components/QuoteDisplay";
 import ImagePreview from "@/components/ImagePreview";
+import LeadCapture from "@/components/LeadCapture";
 import { DesignSpec } from "@/lib/llm/designSpecSchema";
 
 const SketchPad = dynamic(() => import("@/components/SketchPad"), { ssr: false });
@@ -42,6 +43,9 @@ function applySavedTheme() {
 
 type Tab = "chat" | "materials" | "sketch" | "quote";
 
+// Three phases: idle → lead capture → active design studio
+type Phase = "idle" | "lead" | "active";
+
 interface CustomerQuote {
   retailPriceGBP: number;
   retailRangeGBP: { min: number; max: number };
@@ -56,7 +60,7 @@ interface CustomerQuote {
 }
 
 export default function KioskPage() {
-  const [phase, setPhase] = useState<"idle" | "active">("idle");
+  const [phase, setPhase] = useState<Phase>("idle");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("chat");
   const [designSpec, setDesignSpec] = useState<DesignSpec | null>(null);
@@ -81,7 +85,7 @@ export default function KioskPage() {
 
   const resetIdleTimer = useCallback(() => {
     if (idleTimer.current) clearTimeout(idleTimer.current);
-    if (phase === "active") {
+    if (phase === "active" || phase === "lead") {
       idleTimer.current = setTimeout(() => {
         setPhase("idle");
       }, IDLE_TIMEOUT_MS);
@@ -89,7 +93,7 @@ export default function KioskPage() {
   }, [phase]);
 
   useEffect(() => {
-    if (phase === "active") {
+    if (phase === "active" || phase === "lead") {
       resetIdleTimer();
       const events = ["touchstart", "mousedown", "keydown"];
       events.forEach((e) => window.addEventListener(e, resetIdleTimer));
@@ -105,7 +109,8 @@ export default function KioskPage() {
       const res = await fetch("/api/session/start", { method: "POST" });
       const data = await res.json() as { sessionId: string };
       setSessionId(data.sessionId);
-      setPhase("active");
+      // Go to lead capture first
+      setPhase("lead");
       setActiveTab("chat");
       setDesignSpec(null);
       setQuote(null);
@@ -276,6 +281,27 @@ export default function KioskPage() {
         <div className="absolute bottom-8 text-stone-700 text-sm">
           {process.env.NEXT_PUBLIC_SHOP_NAME ?? "Your Jewellery Shop"}
         </div>
+      </div>
+    );
+  }
+
+  // --- LEAD CAPTURE SCREEN ---
+  if (phase === "lead" && sessionId) {
+    return (
+      <div className="min-h-screen flex flex-col" style={{ backgroundColor: "var(--color-background)" }}>
+        <header className="flex items-center justify-between px-5 py-3 bg-stone-900 border-b border-stone-800">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">💍</span>
+            <span className="font-bold text-lg" style={{ color: "var(--color-primary)" }}>Design Studio</span>
+          </div>
+          <button
+            onClick={() => void handleReset()}
+            className="text-stone-500 hover:text-stone-300 text-sm px-3 py-2 rounded-xl hover:bg-stone-800 transition-colors"
+          >
+            Cancel
+          </button>
+        </header>
+        <LeadCapture sessionId={sessionId} onComplete={() => setPhase("active")} />
       </div>
     );
   }

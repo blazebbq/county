@@ -43,7 +43,7 @@ async function callWithRetry(
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const response = await client.chat.completions.create({
-        model: process.env.OPENAI_MODEL ?? "gpt-4o",
+        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         messages,
         max_tokens: 1500,
         temperature: 0.7,

@@ -19,6 +19,7 @@ model Session {
   imageRefs     String   @default("[]")
   assets        UploadedAsset[]
   adminEvents   AdminEvent[]
+  lead          Lead?
 }
 
 model UploadedAsset {
@@ -71,6 +72,31 @@ model PdfTemplateSettings {
   labelLeadTime              String
   disclaimerText             String
   vatText                    String
+  notificationEmail          String   @default("")
   updatedAt                  DateTime @updatedAt
+}
+
+model MetalRateCache {
+  id                String   @id @default("default")
+  goldGBPPerGram24k Float
+  silverGBPPerGram  Float    @default(0)
+  platinumGBPPerGram Float   @default(0)
+  source            String
+  updatedAt         DateTime @updatedAt
+}
+
+model Lead {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  firstName String
+  email     String
+  phone     String
+
+  sessionId String  @unique
+  session   Session @relation(fields: [sessionId], references: [id])
+
+  status    String  @default("new")
 }
 

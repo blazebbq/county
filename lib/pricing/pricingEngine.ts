@@ -1,5 +1,5 @@
 import { DesignSpec } from "@/lib/llm/designSpecSchema";
-import { getMetalSpotRates, getMetalBaseId } from "@/lib/metalSpot";
+import { getMetalRates } from "@/lib/pricing/metalRates";
 import pricingConfig from "@/config/pricing.json";
 import diamondConfig from "@/config/diamonds_lab.json";
 
@@ -95,17 +95,29 @@ function getLeadTime(complexity: string | null): string {
   }
 }
 
+function getMetalBaseId(metalType: string): "goldGBPPerGram24k" | "silverGBPPerGram" | "platinumGBPPerGram" {
+  if (metalType.includes("silver")) return "silverGBPPerGram";
+  if (metalType.includes("platinum")) return "platinumGBPPerGram";
+  return "goldGBPPerGram24k";
+}
+
 export async function computeQuote(spec: DesignSpec): Promise<QuoteResult> {
-  const spotRates = await getMetalSpotRates();
+  const metalRates = await getMetalRates();
   const config = pricingConfig;
   const assumptions: string[] = [];
 
   let metalCost = 0;
   if (spec.metal && spec.estimatedGoldWeightGrams) {
     const baseId = getMetalBaseId(spec.metal.type);
-    // Last-resort hardcoded fallback (gold ~£58.50/g) if both spot feed and config are missing
+    // Map metalRates key → config fallback key for backwards compatibility
+    const configFallbackKeyMap: Record<ReturnType<typeof getMetalBaseId>, string> = {
+      goldGBPPerGram24k: "24k_gold",
+      silverGBPPerGram: "sterling_silver",
+      platinumGBPPerGram: "platinum",
+    };
     const DEFAULT_GOLD_SPOT_GBP_PER_GRAM = 58.5;
-    const spotGBPPerGram = spotRates[baseId] ?? (config.metalSpotFallbackGBPPerGram as Record<string, number>)[baseId] ?? DEFAULT_GOLD_SPOT_GBP_PER_GRAM;
+    const configFallback = (config.metalSpotFallbackGBPPerGram as Record<string, number>)[configFallbackKeyMap[baseId]];
+    const spotGBPPerGram = metalRates[baseId] ?? configFallback ?? DEFAULT_GOLD_SPOT_GBP_PER_GRAM;
     const purity = (config.metalPurityMultiplier as Record<string, number>)[spec.metal.type] ?? 0.585;
     const avgWeightG = (spec.estimatedGoldWeightGrams.min + spec.estimatedGoldWeightGrams.max) / 2;
     const rawMetalCost = avgWeightG * purity * spotGBPPerGram;

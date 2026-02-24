@@ -31,6 +31,7 @@ const PdfTemplateSchema = z.object({
   labelLeadTime:              z.string().min(1).max(MAX_LABEL).transform(stripHtml),
   disclaimerText:             z.string().min(1).max(MAX_DISCLAIMER).transform(stripHtml),
   vatText:                    z.string().min(1).max(MAX_DISCLAIMER).transform(stripHtml),
+  notificationEmail:          z.string().email().max(200).optional().or(z.literal("")).transform((v) => v ?? ""),
 });
 
 export async function GET(_req: NextRequest) {
@@ -39,7 +40,9 @@ export async function GET(_req: NextRequest) {
   }
 
   const settings = await getPdfTemplateSettings();
-  return NextResponse.json({ settings });
+  // Also fetch notificationEmail from DB
+  const row = await prisma.pdfTemplateSettings.findUnique({ where: { id: "default" } });
+  return NextResponse.json({ settings: { ...settings, notificationEmail: row?.notificationEmail ?? "" } });
 }
 
 export async function POST(req: NextRequest) {

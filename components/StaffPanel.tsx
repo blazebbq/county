@@ -129,6 +129,8 @@ export default function StaffPanel({ sessionId, onClose }: StaffPanelProps) {
   const [activeSection, setActiveSection] = useState<"session" | "theme" | "pdf">("session");
   const [theme, setTheme] = useState<typeof DEFAULT_THEME>(DEFAULT_THEME);
   const [recipientEmail, setRecipientEmail] = useState("");
+  const [notificationEmail, setNotificationEmail] = useState("");
+  const [metalRatesUpdatedAt, setMetalRatesUpdatedAt] = useState<string | null>(null);
 
   // PDF template state
   const [pdfTemplate, setPdfTemplate] = useState<PdfTemplate>(DEFAULT_PDF_TEMPLATE);
@@ -142,6 +144,8 @@ export default function StaffPanel({ sessionId, onClose }: StaffPanelProps) {
     setTheme(t);
     const stored = localStorage.getItem("staff_recipient_email") ?? "";
     setRecipientEmail(stored);
+    const notifStored = localStorage.getItem("staff_notification_email") ?? "";
+    setNotificationEmail(notifStored);
   }, []);
 
   // Fetch PDF template the first time the pdf section is entered
@@ -151,12 +155,37 @@ export default function StaffPanel({ sessionId, onClose }: StaffPanelProps) {
       try {
         const res = await fetch("/api/admin/pdf-template");
         if (res.ok) {
-          const data = await res.json() as { settings: PdfTemplate };
+          const data = await res.json() as { settings: PdfTemplate & { notificationEmail: string } };
           setPdfTemplate(data.settings);
+          if (data.settings.notificationEmail) {
+            setNotificationEmail(data.settings.notificationEmail);
+          }
           setPdfFetched(true);
         }
       } catch { /* ignore */ }
     }
+    if (section === "theme") {
+      // Fetch metal rates last-updated time
+      try {
+        const res = await fetch("/api/admin/metal-rates");
+        if (res.ok) {
+          const data = await res.json() as { updatedAt?: string };
+          if (data.updatedAt) setMetalRatesUpdatedAt(data.updatedAt);
+        }
+      } catch { /* ignore */ }
+    }
+  };
+
+  const handleSaveNotificationEmail = async () => {
+    localStorage.setItem("staff_notification_email", notificationEmail.trim());
+    // Persist to DB via pdf-template endpoint (add notificationEmail field)
+    try {
+      await fetch("/api/admin/pdf-template", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...pdfTemplate, notificationEmail: notificationEmail.trim() }),
+      });
+    } catch { /* ignore */ }
   };
 
   const handlePdfFieldChange = (key: keyof PdfTemplate, value: string) => {
@@ -451,6 +480,28 @@ export default function StaffPanel({ sessionId, onClose }: StaffPanelProps) {
             {/* Theme & Settings view */}
             {activeSection === "theme" && (
               <div className="space-y-4">
+                {/* Lead notification email */}
+                <div className="bg-stone-800 rounded-xl p-4 space-y-3">
+                  <h3 className="text-gold-400 font-semibold text-sm uppercase tracking-widest">Lead Notification Email</h3>
+                  <p className="text-stone-500 text-xs">Receive an email when a new customer starts the ring builder.</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="email"
+                      value={notificationEmail}
+                      onChange={(e) => setNotificationEmail(e.target.value)}
+                      placeholder="staff@yourshop.com"
+                      className="flex-1 bg-stone-700 border border-stone-600 rounded-xl px-3 py-2 text-stone-100 placeholder-stone-500 text-sm focus:outline-none"
+                      style={{ userSelect: "text", WebkitUserSelect: "text" }}
+                    />
+                    <button
+                      onClick={() => void handleSaveNotificationEmail()}
+                      className="bg-gold-700 hover:bg-gold-600 text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+
                 {/* Recipient email */}
                 <div className="bg-stone-800 rounded-xl p-4 space-y-3">
                   <h3 className="text-gold-400 font-semibold text-sm uppercase tracking-widest">Quote Recipient Email</h3>
@@ -471,6 +522,17 @@ export default function StaffPanel({ sessionId, onClose }: StaffPanelProps) {
                       Save
                     </button>
                   </div>
+                </div>
+
+                {/* Metal rates last updated */}
+                <div className="bg-stone-800 rounded-xl p-4 space-y-2">
+                  <h3 className="text-gold-400 font-semibold text-sm uppercase tracking-widest">Live Gold Price</h3>
+                  <p className="text-stone-500 text-xs">
+                    {metalRatesUpdatedAt
+                      ? `Last updated: ${new Date(metalRatesUpdatedAt).toLocaleString("en-GB")}`
+                      : "Rate not yet fetched — will update on next pricing call."}
+                  </p>
+                  <p className="text-stone-600 text-xs">Rates are cached for 1 hour and sourced from metals-api.com (requires METALS_API_KEY).</p>
                 </div>
 
                 {/* Theme colours */}

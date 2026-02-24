@@ -161,8 +161,12 @@ export async function GET(
       yPos -= 70;
     }
 
-    // Try to embed generated images
-    const generatedAssets = session.assets.filter((a) => a.type === "generated").slice(0, 2);
+    // Fix F/G: sort by createdAt DESC so the most recent generated image comes first
+    const generatedAssets = session.assets
+      .filter((a) => a.type === "generated")
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 3);
+
     if (generatedAssets.length > 0) {
       yPos -= 10;
       page.drawText("CONCEPT IMAGES", {
@@ -174,18 +178,38 @@ export async function GET(
 
       const imgSize = 160;
       let imgX = 40;
+      let embedded = 0;
       for (const asset of generatedAssets) {
         try {
           const imgPath = join(process.cwd(), "public", asset.path);
           const imgBytes = await readFile(imgPath);
-          const embeddedImg = await pdfDoc.embedPng(imgBytes);
+          // Detect format: PNG signature is 8 bytes: 89 50 4E 47 0D 0A 1A 0A
+          // Check first 4 bytes for reliable detection
+          const isPng = imgBytes.length >= 4 &&
+            imgBytes[0] === 0x89 && imgBytes[1] === 0x50 &&
+            imgBytes[2] === 0x4E && imgBytes[3] === 0x47;
+          const embeddedImg = isPng
+            ? await pdfDoc.embedPng(imgBytes)
+            : await pdfDoc.embedJpg(imgBytes);
           page.drawImage(embeddedImg, { x: imgX, y: yPos - imgSize, width: imgSize, height: imgSize });
           imgX += imgSize + 20;
+          embedded++;
         } catch {
-          // Skip if image not found
+          // Skip if image file not found or unreadable
         }
       }
+      if (embedded === 0) {
+        page.drawText("No concept image generated.", { x: 44, y: yPos - 20, size: 10, font: fontRegular, color: grayColor });
+      }
       yPos -= imgSize + 20;
+    } else {
+      yPos -= 10;
+      page.drawText("CONCEPT IMAGES", {
+        x: 40, y: yPos, size: 13, font: fontBold, color: goldColor,
+      });
+      yPos -= 28;
+      page.drawText("No concept image generated.", { x: 44, y: yPos, size: 10, font: fontRegular, color: grayColor });
+      yPos -= 20;
     }
 
     // Footer — use template values
