@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.kiosk-no-nav {
+  -webkit-app-region: no-drag;
+}
+
+button {
+  min-height: 44px;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chat-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.chat-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chat-scrollbar::-webkit-scrollbar-thumb {
+  background: #44403c;
+  border-radius: 3px;
+}

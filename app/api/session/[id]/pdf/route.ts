@@ -1,0 +1,216 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { DesignSpecSchema } from "@/lib/llm/designSpecSchema";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import { readFile } from "fs/promises";
+import { join } from "path";
+
+function hexToRgb(hex: string): [number, number, number] {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
+    return [0, 0, 0];
+  }
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  return [r, g, b];
+}
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+
+  try {
+    const session = await prisma.session.findUnique({
+      where: { id },
+      include: { assets: true },
+    });
+
+    if (!session) {
+      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    }
+
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage([595, 842]); // A4
+    const { width, height } = page.getSize();
+
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    const goldColor = rgb(...hexToRgb("#d4920f"));
+    const darkColor = rgb(0.1, 0.1, 0.1);
+    const grayColor = rgb(0.4, 0.4, 0.4);
+
+    // Header bar
+    page.drawRectangle({ x: 0, y: height - 80, width, height: 80, color: rgb(0.07, 0.07, 0.07) });
+
+    const shopName = process.env.SHOP_NAME ?? "Your Jewellery Shop";
+    page.drawText(shopName, {
+      x: 40, y: height - 50,
+      size: 22, font: fontBold, color: goldColor,
+    });
+    page.drawText("Custom Ring Design Estimate", {
+      x: 40, y: height - 70,
+      size: 11, font: fontRegular, color: rgb(0.8, 0.8, 0.8),
+    });
+
+    // Date
+    const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+    const dateWidth = fontRegular.widthOfTextAtSize(dateStr, 10);
+    page.drawText(dateStr, {
+      x: width - dateWidth - 40, y: height - 55,
+      size: 10, font: fontRegular, color: rgb(0.7, 0.7, 0.7),
+    });
+
+    let yPos = height - 110;
+
+    // Design Spec section
+    if (session.designSpec) {
+      const parsedSpec = DesignSpecSchema.safeParse(JSON.parse(session.designSpec) as unknown);
+      if (parsedSpec.success) {
+        const spec = parsedSpec.data;
+
+        page.drawText("DESIGN SPECIFICATION", {
+          x: 40, y: yPos, size: 13, font: fontBold, color: goldColor,
+        });
+        yPos -= 8;
+        page.drawLine({ start: { x: 40, y: yPos }, end: { x: width - 40, y: yPos }, thickness: 1, color: goldColor });
+        yPos -= 20;
+
+        const specRows: [string, string][] = [
+          ["Description", spec.intentSummary],
+          ["Metal", spec.metal ? `${spec.metal.type.replace("_", " ").toUpperCase()} — ${spec.metal.finish}` : "TBC"],
+          ["Ring Size", spec.ringSize ? `${spec.ringSize.system} ${spec.ringSize.value}` : "TBC"],
+          ["Stones", spec.stones ? `${spec.stones.kind.replace("_", " ")} — ${spec.stones.tier} quality` : "None"],
+          ["Style", spec.styleTags.join(", ") || "Custom"],
+          ["Complexity", spec.complexity ?? "TBC"],
+        ];
+
+        for (const [label, value] of specRows) {
+          page.drawText(`${label}:`, { x: 40, y: yPos, size: 10, font: fontBold, color: darkColor });
+          page.drawText(value, { x: 160, y: yPos, size: 10, font: fontRegular, color: darkColor });
+          yPos -= 18;
+        }
+        yPos -= 10;
+      }
+    }
+
+    // Quote section
+    if (session.quote) {
+      interface QuoteData {
+        retailPriceGBP?: number;
+        retailRangeGBP?: { min: number; max: number };
+        estimateDisclaimer?: string;
+        customerFacingSummary?: {
+          metal?: string;
+          stones?: string;
+          ringSize?: string;
+          style?: string;
+          leadTime?: string;
+        };
+      }
+      const quote = JSON.parse(session.quote) as QuoteData;
+
+      page.drawText("PRICE ESTIMATE", {
+        x: 40, y: yPos, size: 13, font: fontBold, color: goldColor,
+      });
+      yPos -= 8;
+      page.drawLine({ start: { x: 40, y: yPos }, end: { x: width - 40, y: yPos }, thickness: 1, color: goldColor });
+      yPos -= 20;
+
+      if (quote.retailPriceGBP) {
+        page.drawText(`Estimated Price: £${quote.retailPriceGBP.toLocaleString()}`, {
+          x: 40, y: yPos, size: 16, font: fontBold, color: darkColor,
+        });
+        yPos -= 22;
+      }
+
+      if (quote.retailRangeGBP) {
+        page.drawText(`Range: £${quote.retailRangeGBP.min.toLocaleString()} – £${quote.retailRangeGBP.max.toLocaleString()}`, {
+          x: 40, y: yPos, size: 11, font: fontRegular, color: grayColor,
+        });
+        yPos -= 18;
+      }
+
+      if (quote.customerFacingSummary?.leadTime) {
+        page.drawText(`Estimated Lead Time: ${quote.customerFacingSummary.leadTime}`, {
+          x: 40, y: yPos, size: 10, font: fontRegular, color: grayColor,
+        });
+        yPos -= 30;
+      }
+
+      // Disclaimer box
+      if (quote.estimateDisclaimer) {
+        page.drawRectangle({ x: 36, y: yPos - 48, width: width - 72, height: 56, color: rgb(0.95, 0.95, 0.95) });
+        // Word-wrap disclaimer
+        const words = quote.estimateDisclaimer.split(" ");
+        let line = "";
+        let disclaimerY = yPos - 12;
+        for (const word of words) {
+          const testLine = line ? `${line} ${word}` : word;
+          if (fontRegular.widthOfTextAtSize(testLine, 8) > width - 96) {
+            page.drawText(line, { x: 44, y: disclaimerY, size: 8, font: fontRegular, color: grayColor });
+            disclaimerY -= 12;
+            line = word;
+          } else {
+            line = testLine;
+          }
+        }
+        if (line) page.drawText(line, { x: 44, y: disclaimerY, size: 8, font: fontRegular, color: grayColor });
+        yPos -= 70;
+      }
+    }
+
+    // Try to embed generated images
+    const generatedAssets = session.assets.filter((a) => a.type === "generated").slice(0, 2);
+    if (generatedAssets.length > 0) {
+      yPos -= 10;
+      page.drawText("CONCEPT IMAGES", {
+        x: 40, y: yPos, size: 13, font: fontBold, color: goldColor,
+      });
+      yPos -= 8;
+      page.drawLine({ start: { x: 40, y: yPos }, end: { x: width - 40, y: yPos }, thickness: 1, color: goldColor });
+      yPos -= 15;
+
+      const imgSize = 160;
+      let imgX = 40;
+      for (const asset of generatedAssets) {
+        try {
+          const imgPath = join(process.cwd(), "public", asset.path);
+          const imgBytes = await readFile(imgPath);
+          const embeddedImg = await pdfDoc.embedPng(imgBytes);
+          page.drawImage(embeddedImg, { x: imgX, y: yPos - imgSize, width: imgSize, height: imgSize });
+          imgX += imgSize + 20;
+        } catch {
+          // Skip if image not found
+        }
+      }
+      yPos -= imgSize + 20;
+    }
+
+    // Footer
+    const shopAddress = process.env.SHOP_ADDRESS ?? "";
+    const shopPhone = process.env.SHOP_PHONE ?? "";
+    const shopEmail = process.env.SHOP_EMAIL ?? "";
+
+    page.drawLine({ start: { x: 40, y: 80 }, end: { x: width - 40, y: 80 }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
+    page.drawText(shopName, { x: 40, y: 65, size: 9, font: fontBold, color: darkColor });
+    if (shopAddress) page.drawText(shopAddress, { x: 40, y: 52, size: 8, font: fontRegular, color: grayColor });
+    if (shopPhone) page.drawText(shopPhone, { x: 40, y: 40, size: 8, font: fontRegular, color: grayColor });
+    if (shopEmail) page.drawText(shopEmail, { x: 40, y: 28, size: 8, font: fontRegular, color: grayColor });
+    page.drawText(`Session ref: ${id}`, { x: width - 200, y: 28, size: 7, font: fontRegular, color: rgb(0.7, 0.7, 0.7) });
+
+    const pdfBytes = await pdfDoc.save();
+
+    return new NextResponse(Buffer.from(pdfBytes), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="ring-estimate-${id.slice(0, 8)}.pdf"`,
+      },
+    });
+  } catch (err) {
+    console.log(JSON.stringify({ level: "error", event: "pdf_failed", sessionId: id, error: String(err) }));
+    return NextResponse.json({ error: "Failed to generate PDF" }, { status: 500 });
+  }
+}

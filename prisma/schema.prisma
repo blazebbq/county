@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  status        String   @default("active")
+  customerEmail String?
+  transcript    String   @default("[]")
+  designSpec    String?
+  quote         String?
+  imageRefs     String   @default("[]")
+  assets        UploadedAsset[]
+  adminEvents   AdminEvent[]
+}
+
+model UploadedAsset {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id])
+  type      String
+  path      String
+  mimeType  String
+  createdAt DateTime @default(now())
+}
+
+model AdminEvent {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id])
+  type      String
+  payload   String
+  createdAt DateTime @default(now())
+}
