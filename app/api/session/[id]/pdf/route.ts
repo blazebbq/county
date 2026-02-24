@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { DesignSpecSchema } from "@/lib/llm/designSpecSchema";
+import { getPdfTemplateSettings } from "@/lib/pdfTemplate";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { readFile } from "fs/promises";
 import { join } from "path";
@@ -22,10 +23,10 @@ export async function GET(
   const { id } = await params;
 
   try {
-    const session = await prisma.session.findUnique({
-      where: { id },
-      include: { assets: true },
-    });
+    const [session, template] = await Promise.all([
+      prisma.session.findUnique({ where: { id }, include: { assets: true } }),
+      getPdfTemplateSettings(),
+    ]);
 
     if (!session) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
@@ -45,17 +46,16 @@ export async function GET(
     // Header bar
     page.drawRectangle({ x: 0, y: height - 80, width, height: 80, color: rgb(0.07, 0.07, 0.07) });
 
-    const shopName = process.env.SHOP_NAME ?? "Your Jewellery Shop";
-    page.drawText(shopName, {
+    page.drawText(template.shopName, {
       x: 40, y: height - 50,
       size: 22, font: fontBold, color: goldColor,
     });
-    page.drawText("Custom Ring Design Estimate", {
+    page.drawText(template.documentTitle, {
       x: 40, y: height - 70,
       size: 11, font: fontRegular, color: rgb(0.8, 0.8, 0.8),
     });
 
-    // Date
+    // Date (always dynamic)
     const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
     const dateWidth = fontRegular.widthOfTextAtSize(dateStr, 10);
     page.drawText(dateStr, {
@@ -71,7 +71,7 @@ export async function GET(
       if (parsedSpec.success) {
         const spec = parsedSpec.data;
 
-        page.drawText("DESIGN SPECIFICATION", {
+        page.drawText(template.headingDesignSpecification, {
           x: 40, y: yPos, size: 13, font: fontBold, color: goldColor,
         });
         yPos -= 8;
@@ -79,12 +79,12 @@ export async function GET(
         yPos -= 20;
 
         const specRows: [string, string][] = [
-          ["Description", spec.intentSummary],
-          ["Metal", spec.metal ? `${spec.metal.type.replace("_", " ").toUpperCase()} — ${spec.metal.finish}` : "TBC"],
-          ["Ring Size", spec.ringSize ? `${spec.ringSize.system} ${spec.ringSize.value}` : "TBC"],
-          ["Stones", spec.stones ? `${spec.stones.kind.replace("_", " ")} — ${spec.stones.tier} quality` : "None"],
-          ["Style", spec.styleTags.join(", ") || "Custom"],
-          ["Complexity", spec.complexity ?? "TBC"],
+          [template.labelDescription, spec.intentSummary],
+          [template.labelMetal, spec.metal ? `${spec.metal.type.replace("_", " ").toUpperCase()} — ${spec.metal.finish}` : "TBC"],
+          [template.labelRingSize, spec.ringSize ? `${spec.ringSize.system} ${spec.ringSize.value}` : "TBC"],
+          [template.labelStones, spec.stones ? `${spec.stones.kind.replace("_", " ")} — ${spec.stones.tier} quality` : "None"],
+          [template.labelStyle, spec.styleTags.join(", ") || "Custom"],
+          [template.labelComplexity, spec.complexity ?? "TBC"],
         ];
 
         for (const [label, value] of specRows) {
@@ -101,7 +101,6 @@ export async function GET(
       interface QuoteData {
         retailPriceGBP?: number;
         retailRangeGBP?: { min: number; max: number };
-        estimateDisclaimer?: string;
         customerFacingSummary?: {
           metal?: string;
           stones?: string;
@@ -112,7 +111,7 @@ export async function GET(
       }
       const quote = JSON.parse(session.quote) as QuoteData;
 
-      page.drawText("PRICE ESTIMATE", {
+      page.drawText(template.headingPriceEstimate, {
         x: 40, y: yPos, size: 13, font: fontBold, color: goldColor,
       });
       yPos -= 8;
@@ -120,46 +119,46 @@ export async function GET(
       yPos -= 20;
 
       if (quote.retailPriceGBP) {
-        page.drawText(`Estimated Price: £${quote.retailPriceGBP.toLocaleString()}`, {
+        page.drawText(`${template.labelEstimatedPrice}: £${quote.retailPriceGBP.toLocaleString()}`, {
           x: 40, y: yPos, size: 16, font: fontBold, color: darkColor,
         });
         yPos -= 22;
       }
 
       if (quote.retailRangeGBP) {
-        page.drawText(`Range: £${quote.retailRangeGBP.min.toLocaleString()} – £${quote.retailRangeGBP.max.toLocaleString()}`, {
+        page.drawText(`${template.labelRange}: £${quote.retailRangeGBP.min.toLocaleString()} – £${quote.retailRangeGBP.max.toLocaleString()}`, {
           x: 40, y: yPos, size: 11, font: fontRegular, color: grayColor,
         });
         yPos -= 18;
       }
 
       if (quote.customerFacingSummary?.leadTime) {
-        page.drawText(`Estimated Lead Time: ${quote.customerFacingSummary.leadTime}`, {
+        page.drawText(`${template.labelLeadTime}: ${quote.customerFacingSummary.leadTime}`, {
           x: 40, y: yPos, size: 10, font: fontRegular, color: grayColor,
         });
         yPos -= 30;
       }
 
-      // Disclaimer box
-      if (quote.estimateDisclaimer) {
-        page.drawRectangle({ x: 36, y: yPos - 48, width: width - 72, height: 56, color: rgb(0.95, 0.95, 0.95) });
-        // Word-wrap disclaimer
-        const words = quote.estimateDisclaimer.split(" ");
-        let line = "";
-        let disclaimerY = yPos - 12;
-        for (const word of words) {
-          const testLine = line ? `${line} ${word}` : word;
-          if (fontRegular.widthOfTextAtSize(testLine, 8) > width - 96) {
-            page.drawText(line, { x: 44, y: disclaimerY, size: 8, font: fontRegular, color: grayColor });
-            disclaimerY -= 12;
-            line = word;
-          } else {
-            line = testLine;
-          }
+      // Disclaimer box — use template text (main + VAT line combined, filtering empty parts)
+      const fullDisclaimer = [template.disclaimerText.trim(), template.vatText.trim()]
+        .filter(Boolean)
+        .join(" ");
+      page.drawRectangle({ x: 36, y: yPos - 48, width: width - 72, height: 56, color: rgb(0.95, 0.95, 0.95) });
+      const words = fullDisclaimer.split(" ");
+      let line = "";
+      let disclaimerY = yPos - 12;
+      for (const word of words) {
+        const testLine = line ? `${line} ${word}` : word;
+        if (fontRegular.widthOfTextAtSize(testLine, 8) > width - 96) {
+          page.drawText(line, { x: 44, y: disclaimerY, size: 8, font: fontRegular, color: grayColor });
+          disclaimerY -= 12;
+          line = word;
+        } else {
+          line = testLine;
         }
-        if (line) page.drawText(line, { x: 44, y: disclaimerY, size: 8, font: fontRegular, color: grayColor });
-        yPos -= 70;
       }
+      if (line) page.drawText(line, { x: 44, y: disclaimerY, size: 8, font: fontRegular, color: grayColor });
+      yPos -= 70;
     }
 
     // Try to embed generated images
@@ -189,16 +188,12 @@ export async function GET(
       yPos -= imgSize + 20;
     }
 
-    // Footer
-    const shopAddress = process.env.SHOP_ADDRESS ?? "";
-    const shopPhone = process.env.SHOP_PHONE ?? "";
-    const shopEmail = process.env.SHOP_EMAIL ?? "";
-
+    // Footer — use template values
     page.drawLine({ start: { x: 40, y: 80 }, end: { x: width - 40, y: 80 }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
-    page.drawText(shopName, { x: 40, y: 65, size: 9, font: fontBold, color: darkColor });
-    if (shopAddress) page.drawText(shopAddress, { x: 40, y: 52, size: 8, font: fontRegular, color: grayColor });
-    if (shopPhone) page.drawText(shopPhone, { x: 40, y: 40, size: 8, font: fontRegular, color: grayColor });
-    if (shopEmail) page.drawText(shopEmail, { x: 40, y: 28, size: 8, font: fontRegular, color: grayColor });
+    page.drawText(template.shopName, { x: 40, y: 65, size: 9, font: fontBold, color: darkColor });
+    if (template.shopAddress) page.drawText(template.shopAddress, { x: 40, y: 52, size: 8, font: fontRegular, color: grayColor });
+    if (template.shopPhone) page.drawText(template.shopPhone, { x: 40, y: 40, size: 8, font: fontRegular, color: grayColor });
+    if (template.shopEmail) page.drawText(template.shopEmail, { x: 40, y: 28, size: 8, font: fontRegular, color: grayColor });
     page.drawText(`Session ref: ${id}`, { x: width - 200, y: 28, size: 7, font: fontRegular, color: rgb(0.7, 0.7, 0.7) });
 
     const pdfBytes = await pdfDoc.save();

@@ -72,6 +72,49 @@ interface StaffSession {
   createdAt: string;
 }
 
+interface PdfTemplate {
+  shopName: string;
+  shopAddress: string;
+  shopPhone: string;
+  shopEmail: string;
+  documentTitle: string;
+  headingDesignSpecification: string;
+  headingPriceEstimate: string;
+  labelDescription: string;
+  labelMetal: string;
+  labelRingSize: string;
+  labelStones: string;
+  labelStyle: string;
+  labelComplexity: string;
+  labelEstimatedPrice: string;
+  labelRange: string;
+  labelLeadTime: string;
+  disclaimerText: string;
+  vatText: string;
+}
+
+const DEFAULT_PDF_TEMPLATE: PdfTemplate = {
+  shopName: "Your Jewellery Shop",
+  shopAddress: "",
+  shopPhone: "",
+  shopEmail: "",
+  documentTitle: "Custom Ring Design Estimate",
+  headingDesignSpecification: "DESIGN SPECIFICATION",
+  headingPriceEstimate: "PRICE ESTIMATE",
+  labelDescription: "Description",
+  labelMetal: "Metal",
+  labelRingSize: "Ring Size",
+  labelStones: "Stones",
+  labelStyle: "Style",
+  labelComplexity: "Complexity",
+  labelEstimatedPrice: "Estimated Price",
+  labelRange: "Range",
+  labelLeadTime: "Estimated Lead Time",
+  disclaimerText:
+    "This is an indicative estimate only. Final price may vary based on exact specifications, current material costs, and craftsperson assessment.",
+  vatText: "VAT may apply. No obligation to purchase.",
+};
+
 interface StaffPanelProps {
   sessionId: string;
   onClose: () => void;
@@ -83,9 +126,16 @@ export default function StaffPanel({ sessionId, onClose }: StaffPanelProps) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [sessionData, setSessionData] = useState<StaffSession | null>(null);
-  const [activeSection, setActiveSection] = useState<"session" | "theme">("session");
+  const [activeSection, setActiveSection] = useState<"session" | "theme" | "pdf">("session");
   const [theme, setTheme] = useState<typeof DEFAULT_THEME>(DEFAULT_THEME);
   const [recipientEmail, setRecipientEmail] = useState("");
+
+  // PDF template state
+  const [pdfTemplate, setPdfTemplate] = useState<PdfTemplate>(DEFAULT_PDF_TEMPLATE);
+  const [pdfFetched, setPdfFetched] = useState(false);
+  const [pdfSaving, setPdfSaving] = useState(false);
+  const [pdfSaveSuccess, setPdfSaveSuccess] = useState(false);
+  const [pdfSaveError, setPdfSaveError] = useState("");
 
   useEffect(() => {
     const t = loadTheme();
@@ -93,6 +143,83 @@ export default function StaffPanel({ sessionId, onClose }: StaffPanelProps) {
     const stored = localStorage.getItem("staff_recipient_email") ?? "";
     setRecipientEmail(stored);
   }, []);
+
+  // Fetch PDF template the first time the pdf section is entered
+  const handleSectionChange = async (section: "session" | "theme" | "pdf") => {
+    setActiveSection(section);
+    if (section === "pdf" && !pdfFetched) {
+      try {
+        const res = await fetch("/api/admin/pdf-template");
+        if (res.ok) {
+          const data = await res.json() as { settings: PdfTemplate };
+          setPdfTemplate(data.settings);
+          setPdfFetched(true);
+        }
+      } catch { /* ignore */ }
+    }
+  };
+
+  const handlePdfFieldChange = (key: keyof PdfTemplate, value: string) => {
+    setPdfTemplate((prev) => ({ ...prev, [key]: value }));
+    setPdfSaveSuccess(false);
+    setPdfSaveError("");
+  };
+
+
+  const handlePdfSave = async () => {
+    const FIELD_LABELS: Record<keyof PdfTemplate, string> = {
+      shopName: "Shop Name",
+      shopAddress: "Shop Address",
+      shopPhone: "Shop Phone",
+      shopEmail: "Shop Email",
+      documentTitle: "Document Title",
+      headingDesignSpecification: "Design Specification Heading",
+      headingPriceEstimate: "Price Estimate Heading",
+      labelDescription: "Description Label",
+      labelMetal: "Metal Label",
+      labelRingSize: "Ring Size Label",
+      labelStones: "Stones Label",
+      labelStyle: "Style Label",
+      labelComplexity: "Complexity Label",
+      labelEstimatedPrice: "Estimated Price Label",
+      labelRange: "Range Label",
+      labelLeadTime: "Lead Time Label",
+      disclaimerText: "Main Disclaimer",
+      vatText: "VAT / Obligation Line",
+    };
+    // Basic non-empty validation for required fields
+    const requiredKeys: (keyof PdfTemplate)[] = [
+      "shopName", "documentTitle", "headingDesignSpecification", "headingPriceEstimate",
+      "labelDescription", "labelMetal", "labelRingSize", "labelStones", "labelStyle",
+      "labelComplexity", "labelEstimatedPrice", "labelRange", "labelLeadTime",
+      "disclaimerText", "vatText",
+    ];
+    for (const key of requiredKeys) {
+      if (!pdfTemplate[key].trim()) {
+        setPdfSaveError(`"${FIELD_LABELS[key]}" cannot be empty.`);
+        return;
+      }
+    }
+    setPdfSaving(true);
+    setPdfSaveError("");
+    setPdfSaveSuccess(false);
+    try {
+      const res = await fetch("/api/admin/pdf-template", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pdfTemplate),
+      });
+      if (!res.ok) {
+        const err = await res.json() as { error?: string };
+        throw new Error(err.error ?? "Save failed");
+      }
+      setPdfSaveSuccess(true);
+    } catch (err) {
+      setPdfSaveError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setPdfSaving(false);
+    }
+  };
 
   const handleThemeChange = (key: keyof typeof DEFAULT_THEME, value: string) => {
     const updated = { ...theme, [key]: value };
@@ -223,16 +350,22 @@ export default function StaffPanel({ sessionId, onClose }: StaffPanelProps) {
             {/* Section tabs */}
             <div className="flex gap-2">
               <button
-                onClick={() => setActiveSection("session")}
+                onClick={() => void handleSectionChange("session")}
                 className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${activeSection === "session" ? "bg-gold-700 text-white" : "bg-stone-800 text-stone-400 hover:bg-stone-700"}`}
               >
                 Session
               </button>
               <button
-                onClick={() => setActiveSection("theme")}
+                onClick={() => void handleSectionChange("theme")}
                 className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${activeSection === "theme" ? "bg-gold-700 text-white" : "bg-stone-800 text-stone-400 hover:bg-stone-700"}`}
               >
                 🎨 Theme & Settings
+              </button>
+              <button
+                onClick={() => void handleSectionChange("pdf")}
+                className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${activeSection === "pdf" ? "bg-gold-700 text-white" : "bg-stone-800 text-stone-400 hover:bg-stone-700"}`}
+              >
+                📄 PDF Template
               </button>
             </div>
 
@@ -376,6 +509,128 @@ export default function StaffPanel({ sessionId, onClose }: StaffPanelProps) {
                     Reset to Defaults
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* PDF Template view */}
+            {activeSection === "pdf" && (
+              <div className="space-y-4">
+                {/* Shop Information */}
+                <div className="bg-stone-800 rounded-xl p-4 space-y-3">
+                  <h3 className="text-gold-400 font-semibold text-sm uppercase tracking-widest">Shop Information</h3>
+                  {([
+                    ["shopName", "Shop Name"],
+                    ["shopAddress", "Address Line"],
+                    ["shopPhone", "Phone Number"],
+                    ["shopEmail", "Email"],
+                  ] as [keyof PdfTemplate, string][]).map(([key, label]) => (
+                    <div key={key}>
+                      <label className="block text-stone-400 text-xs mb-1">{label}</label>
+                      <input
+                        type="text"
+                        value={pdfTemplate[key]}
+                        onChange={(e) => handlePdfFieldChange(key, e.target.value)}
+                        className="w-full bg-stone-700 border border-stone-600 rounded-xl px-3 py-2 text-stone-100 placeholder-stone-500 text-sm focus:outline-none"
+                        style={{ userSelect: "text", WebkitUserSelect: "text" }}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Document Title */}
+                <div className="bg-stone-800 rounded-xl p-4 space-y-3">
+                  <h3 className="text-gold-400 font-semibold text-sm uppercase tracking-widest">Document Title</h3>
+                  <input
+                    type="text"
+                    value={pdfTemplate.documentTitle}
+                    onChange={(e) => handlePdfFieldChange("documentTitle", e.target.value)}
+                    className="w-full bg-stone-700 border border-stone-600 rounded-xl px-3 py-2 text-stone-100 placeholder-stone-500 text-sm focus:outline-none"
+                    style={{ userSelect: "text", WebkitUserSelect: "text" }}
+                  />
+                </div>
+
+                {/* Section Headings */}
+                <div className="bg-stone-800 rounded-xl p-4 space-y-3">
+                  <h3 className="text-gold-400 font-semibold text-sm uppercase tracking-widest">Section Headings</h3>
+                  {([
+                    ["headingDesignSpecification", "Design Specification Heading"],
+                    ["headingPriceEstimate", "Price Estimate Heading"],
+                  ] as [keyof PdfTemplate, string][]).map(([key, label]) => (
+                    <div key={key}>
+                      <label className="block text-stone-400 text-xs mb-1">{label}</label>
+                      <input
+                        type="text"
+                        value={pdfTemplate[key]}
+                        onChange={(e) => handlePdfFieldChange(key, e.target.value)}
+                        className="w-full bg-stone-700 border border-stone-600 rounded-xl px-3 py-2 text-stone-100 placeholder-stone-500 text-sm focus:outline-none"
+                        style={{ userSelect: "text", WebkitUserSelect: "text" }}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Field Labels */}
+                <div className="bg-stone-800 rounded-xl p-4 space-y-3">
+                  <h3 className="text-gold-400 font-semibold text-sm uppercase tracking-widest">Field Labels</h3>
+                  {([
+                    ["labelDescription", "Description"],
+                    ["labelMetal", "Metal"],
+                    ["labelRingSize", "Ring Size"],
+                    ["labelStones", "Stones"],
+                    ["labelStyle", "Style"],
+                    ["labelComplexity", "Complexity"],
+                    ["labelEstimatedPrice", "Estimated Price"],
+                    ["labelRange", "Range"],
+                    ["labelLeadTime", "Estimated Lead Time"],
+                  ] as [keyof PdfTemplate, string][]).map(([key, label]) => (
+                    <div key={key}>
+                      <label className="block text-stone-400 text-xs mb-1">{label}</label>
+                      <input
+                        type="text"
+                        value={pdfTemplate[key]}
+                        onChange={(e) => handlePdfFieldChange(key, e.target.value)}
+                        className="w-full bg-stone-700 border border-stone-600 rounded-xl px-3 py-2 text-stone-100 placeholder-stone-500 text-sm focus:outline-none"
+                        style={{ userSelect: "text", WebkitUserSelect: "text" }}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Disclaimer Text */}
+                <div className="bg-stone-800 rounded-xl p-4 space-y-3">
+                  <h3 className="text-gold-400 font-semibold text-sm uppercase tracking-widest">Disclaimer Text</h3>
+                  <div>
+                    <label className="block text-stone-400 text-xs mb-1">Main Disclaimer</label>
+                    <textarea
+                      value={pdfTemplate.disclaimerText}
+                      onChange={(e) => handlePdfFieldChange("disclaimerText", e.target.value)}
+                      rows={3}
+                      className="w-full bg-stone-700 border border-stone-600 rounded-xl px-3 py-2 text-stone-100 placeholder-stone-500 text-sm focus:outline-none resize-none"
+                      style={{ userSelect: "text", WebkitUserSelect: "text" }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-stone-400 text-xs mb-1">VAT / Obligation Line</label>
+                    <input
+                      type="text"
+                      value={pdfTemplate.vatText}
+                      onChange={(e) => handlePdfFieldChange("vatText", e.target.value)}
+                      className="w-full bg-stone-700 border border-stone-600 rounded-xl px-3 py-2 text-stone-100 placeholder-stone-500 text-sm focus:outline-none"
+                      style={{ userSelect: "text", WebkitUserSelect: "text" }}
+                    />
+                  </div>
+                </div>
+
+                {pdfSaveError && <p className="text-red-400 text-sm">{pdfSaveError}</p>}
+                {pdfSaveSuccess && <p className="text-green-400 text-sm">✓ Changes saved. Next PDF will use updated text.</p>}
+
+                <button
+                  onClick={() => void handlePdfSave()}
+                  disabled={pdfSaving}
+                  className="w-full bg-gold-700 hover:bg-gold-600 disabled:opacity-40 text-white rounded-xl py-3 text-sm font-semibold transition-colors"
+                >
+                  {pdfSaving ? "Saving…" : "Save Changes"}
+                </button>
               </div>
             )}
 

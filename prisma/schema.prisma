@@ -51,3 +51,26 @@ model QuoteSubmission {
   timestamp      DateTime @default(now())
 }
 
+model PdfTemplateSettings {
+  id                         String   @id @default("default")
+  shopName                   String
+  shopAddress                String
+  shopPhone                  String
+  shopEmail                  String
+  documentTitle              String
+  headingDesignSpecification String
+  headingPriceEstimate       String
+  labelDescription           String
+  labelMetal                 String
+  labelRingSize              String
+  labelStones                String
+  labelStyle                 String
+  labelComplexity            String
+  labelEstimatedPrice        String
+  labelRange                 String
+  labelLeadTime              String
+  disclaimerText             String
+  vatText                    String
+  updatedAt                  DateTime @updatedAt
+}
+
