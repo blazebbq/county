@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import ChatInterface from "@/components/ChatInterface";
 import MaterialSelector from "@/components/MaterialSelector";
 import QuoteDisplay from "@/components/QuoteDisplay";
-import ImageGallery from "@/components/ImageGallery";
+import ImagePreview from "@/components/ImagePreview";
 import { DesignSpec } from "@/lib/llm/designSpecSchema";
 
 const SketchPad = dynamic(() => import("@/components/SketchPad"), { ssr: false });
@@ -13,7 +13,34 @@ const StaffPanel = dynamic(() => import("@/components/StaffPanel"), { ssr: false
 
 const IDLE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
 
-type Tab = "chat" | "materials" | "sketch" | "concepts" | "quote";
+// Validate hex colour values before applying to CSS to prevent injection via localStorage
+const HEX_COLOUR_RE = /^#[0-9a-fA-F]{3,8}$/;
+
+// Apply saved theme from localStorage on mount
+function applySavedTheme() {
+  if (typeof window === "undefined") return;
+  try {
+    const stored = localStorage.getItem("kiosk_theme");
+    if (stored) {
+      const t = JSON.parse(stored) as Record<string, unknown>;
+      const root = document.documentElement;
+      const keys: [string, string][] = [
+        ["primary", "--color-primary"],
+        ["accent", "--color-accent"],
+        ["background", "--color-background"],
+        ["button", "--color-button"],
+      ];
+      for (const [key, cssVar] of keys) {
+        const val = t[key];
+        if (typeof val === "string" && HEX_COLOUR_RE.test(val)) {
+          root.style.setProperty(cssVar, val);
+        }
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+type Tab = "chat" | "materials" | "sketch" | "quote";
 
 interface CustomerQuote {
   retailPriceGBP: number;
@@ -34,7 +61,8 @@ export default function KioskPage() {
   const [activeTab, setActiveTab] = useState<Tab>("chat");
   const [designSpec, setDesignSpec] = useState<DesignSpec | null>(null);
   const [quote, setQuote] = useState<CustomerQuote | null>(null);
-  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  // Single image — only the latest render is kept
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [generatingImages, setGeneratingImages] = useState(false);
   const [generatingQuote, setGeneratingQuote] = useState(false);
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
@@ -45,6 +73,11 @@ export default function KioskPage() {
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const staffTapCount = useRef(0);
   const staffTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Apply saved theme on mount
+  useEffect(() => {
+    applySavedTheme();
+  }, []);
 
   const resetIdleTimer = useCallback(() => {
     if (idleTimer.current) clearTimeout(idleTimer.current);
@@ -76,7 +109,7 @@ export default function KioskPage() {
       setActiveTab("chat");
       setDesignSpec(null);
       setQuote(null);
-      setImageUrls([]);
+      setImageUrl(null);
       setQuoteReady(false);
       setSuggestedQuestions([
         "I'm looking for an engagement ring",
@@ -96,7 +129,7 @@ export default function KioskPage() {
     setSessionId(null);
     setDesignSpec(null);
     setQuote(null);
-    setImageUrls([]);
+    setImageUrl(null);
     setQuoteReady(false);
     setSuggestedQuestions([]);
     setPendingSketch(null);
@@ -112,6 +145,7 @@ export default function KioskPage() {
     setQuoteReady(true);
   }, []);
 
+  // Always recompute quote fresh
   const generateQuote = useCallback(async () => {
     if (!sessionId || generatingQuote) return;
     setGeneratingQuote(true);
@@ -120,7 +154,6 @@ export default function KioskPage() {
       if (res.ok) {
         const data = await res.json() as { quote: CustomerQuote };
         setQuote(data.quote);
-        setActiveTab("quote");
       }
     } catch {
       // ignore
@@ -129,15 +162,18 @@ export default function KioskPage() {
     }
   }, [sessionId, generatingQuote]);
 
-  const generateImages = useCallback(async () => {
+  // Generate exactly one image, replace existing
+  const generateImage = useCallback(async () => {
     if (!sessionId || generatingImages) return;
     setGeneratingImages(true);
-    setActiveTab("concepts");
     try {
       const res = await fetch(`/api/session/${sessionId}/generate-images`, { method: "POST" });
       if (res.ok) {
         const data = await res.json() as { imageUrls: string[] };
-        setImageUrls((prev) => [...prev, ...data.imageUrls]);
+        if (data.imageUrls.length > 0) {
+          // Replace — only one image at a time
+          setImageUrl(data.imageUrls[0]);
+        }
       }
     } catch {
       // ignore
@@ -157,6 +193,21 @@ export default function KioskPage() {
     setActiveTab("chat");
   }, []);
 
+  const handleProceedWithQuote = useCallback(() => {
+    // Navigate to the quote tab
+    setActiveTab("quote");
+    // Always regenerate quote fresh when proceeding
+    void generateQuote();
+  }, [generateQuote]);
+
+  // Refresh quote every time the quote tab is opened
+  const handleTabChange = useCallback((tab: Tab) => {
+    setActiveTab(tab);
+    if (tab === "quote" && quoteReady) {
+      void generateQuote();
+    }
+  }, [quoteReady, generateQuote]);
+
   // Staff panel: tap logo 5 times quickly to reveal unlock panel
   const STAFF_UNLOCK_TAP_COUNT = 5;
   const handleLogoTap = () => {
@@ -173,7 +224,6 @@ export default function KioskPage() {
     { id: "chat", label: "Chat", emoji: "💬" },
     { id: "materials", label: "Materials", emoji: "💎" },
     { id: "sketch", label: "Sketch", emoji: "✏️" },
-    { id: "concepts", label: "Concepts", emoji: "🎨" },
     { id: "quote", label: "Quote", emoji: "📋" },
   ];
 
@@ -181,25 +231,26 @@ export default function KioskPage() {
   if (phase === "idle") {
     return (
       <div
-        className="min-h-screen bg-stone-950 flex flex-col items-center justify-center cursor-pointer select-none"
+        className="min-h-screen flex flex-col items-center justify-center cursor-pointer select-none"
+        style={{ backgroundColor: "var(--color-background)" }}
         onClick={() => void startSession()}
       >
         {/* Ambient background */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-gold-700/10 rounded-full blur-3xl" />
-          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-gold-500/5 rounded-full blur-3xl" />
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl opacity-10" style={{ backgroundColor: "var(--color-primary)" }} />
+          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full blur-3xl opacity-5" style={{ backgroundColor: "var(--color-accent)" }} />
         </div>
 
         <div className="relative z-10 text-center px-8">
           {/* Logo / Brand */}
           <div className="mb-8">
             <div className="w-24 h-24 mx-auto mb-6 relative">
-              <div className="w-24 h-24 border-2 border-gold-500 rounded-full flex items-center justify-center">
+              <div className="w-24 h-24 border-2 rounded-full flex items-center justify-center" style={{ borderColor: "var(--color-primary)" }}>
                 <div className="text-5xl">💍</div>
               </div>
-              <div className="absolute inset-0 border-2 border-gold-400/30 rounded-full animate-ping" />
+              <div className="absolute inset-0 border-2 rounded-full animate-ping opacity-30" style={{ borderColor: "var(--color-accent)" }} />
             </div>
-            <h1 className="text-4xl font-bold text-gold-400 tracking-wide mb-2">
+            <h1 className="text-4xl font-bold tracking-wide mb-2" style={{ color: "var(--color-primary)" }}>
               Design Your Ring
             </h1>
             <p className="text-stone-400 text-xl">Bespoke jewellery, crafted for you</p>
@@ -207,7 +258,10 @@ export default function KioskPage() {
 
           {/* CTA */}
           <div className="mt-12 animate-pulse">
-            <div className="inline-flex items-center gap-3 bg-gold-600 hover:bg-gold-500 text-white rounded-2xl px-10 py-5 text-2xl font-semibold shadow-lg shadow-gold-900/40 transition-colors">
+            <div
+              className="inline-flex items-center gap-3 text-white rounded-2xl px-10 py-5 text-2xl font-semibold shadow-lg transition-colors"
+              style={{ backgroundColor: "var(--color-button)" }}
+            >
               <span>✨</span>
               <span>Tap to Begin</span>
             </div>
@@ -228,7 +282,7 @@ export default function KioskPage() {
 
   // --- ACTIVE KIOSK ---
   return (
-    <div className="min-h-screen bg-stone-950 flex flex-col h-screen overflow-hidden">
+    <div className="min-h-screen flex flex-col h-screen overflow-hidden" style={{ backgroundColor: "var(--color-background)" }}>
       {/* Header */}
       <header className="flex items-center justify-between px-5 py-3 bg-stone-900 border-b border-stone-800 flex-shrink-0">
         <button
@@ -236,32 +290,10 @@ export default function KioskPage() {
           onClick={handleLogoTap}
         >
           <span className="text-2xl">💍</span>
-          <span className="text-gold-400 font-bold text-lg">Design Studio</span>
+          <span className="font-bold text-lg" style={{ color: "var(--color-primary)" }}>Design Studio</span>
         </button>
 
         <div className="flex items-center gap-3">
-          {/* Generate concepts button */}
-          {designSpec && imageUrls.length === 0 && (
-            <button
-              onClick={() => void generateImages()}
-              disabled={generatingImages}
-              className="bg-stone-800 hover:bg-stone-700 text-gold-400 border border-stone-700 rounded-xl px-4 py-2 text-sm font-medium transition-colors"
-            >
-              {generatingImages ? "Generating…" : "✨ Visualise"}
-            </button>
-          )}
-
-          {/* Get quote button */}
-          {quoteReady && !quote && (
-            <button
-              onClick={() => void generateQuote()}
-              disabled={generatingQuote}
-              className="bg-gold-600 hover:bg-gold-500 text-white rounded-xl px-4 py-2 text-sm font-semibold transition-colors"
-            >
-              {generatingQuote ? "Calculating…" : "📋 Get Quote"}
-            </button>
-          )}
-
           {/* Reset */}
           <button
             onClick={() => void handleReset()}
@@ -277,25 +309,21 @@ export default function KioskPage() {
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => {
-              if (tab.id === "concepts" && imageUrls.length === 0 && !generatingImages) {
-                void generateImages();
-              }
-              setActiveTab(tab.id);
-            }}
+            onClick={() => handleTabChange(tab.id)}
             className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 text-xs font-medium transition-colors relative ${
               activeTab === tab.id
-                ? "text-gold-400"
+                ? "text-stone-100"
                 : "text-stone-500 hover:text-stone-300"
             }`}
+            style={activeTab === tab.id ? { color: "var(--color-primary)" } : {}}
           >
             <span className="text-lg">{tab.emoji}</span>
             <span>{tab.label}</span>
             {activeTab === tab.id && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gold-500" />
+              <div className="absolute bottom-0 left-0 right-0 h-0.5" style={{ backgroundColor: "var(--color-primary)" }} />
             )}
             {tab.id === "quote" && quote && (
-              <div className="absolute top-1 right-3 w-2 h-2 bg-gold-400 rounded-full" />
+              <div className="absolute top-1 right-3 w-2 h-2 rounded-full" style={{ backgroundColor: "var(--color-accent)" }} />
             )}
           </button>
         ))}
@@ -303,22 +331,37 @@ export default function KioskPage() {
 
       {/* Tab content */}
       <main className="flex-1 overflow-hidden">
-        {/* Chat tab */}
-        <div className={`h-full ${activeTab === "chat" ? "flex flex-col" : "hidden"}`}>
-          {sessionId && (
-            <ChatInterface
-              sessionId={sessionId}
-              onDesignSpecUpdate={handleDesignSpecUpdate}
-              onQuoteReady={handleQuoteReady}
-              suggestedQuestions={suggestedQuestions}
-              initialMessage={chatMessage ?? undefined}
-              initialImageDataUrl={pendingSketch ?? undefined}
-              onMessageSent={() => {
-                setChatMessage(null);
-                setPendingSketch(null);
-              }}
+
+        {/* Chat tab — split layout: flex-col on mobile (chat top, image bottom), flex-row on desktop */}
+        <div className={`h-full ${activeTab === "chat" ? "flex flex-col md:flex-row" : "hidden"}`}>
+          {/* Chat conversation — fills available space */}
+          <div className="flex flex-col flex-1 min-w-0 md:max-w-[60%] overflow-hidden">
+            {sessionId && (
+              <ChatInterface
+                sessionId={sessionId}
+                onDesignSpecUpdate={handleDesignSpecUpdate}
+                onQuoteReady={handleQuoteReady}
+                suggestedQuestions={suggestedQuestions}
+                initialMessage={chatMessage ?? undefined}
+                initialImageDataUrl={pendingSketch ?? undefined}
+                onMessageSent={() => {
+                  setChatMessage(null);
+                  setPendingSketch(null);
+                }}
+              />
+            )}
+          </div>
+
+          {/* Image preview — fixed width on desktop, fixed height on mobile */}
+          <div className="flex flex-col md:w-[40%] flex-shrink-0 h-64 md:h-auto">
+            <ImagePreview
+              imageUrl={imageUrl}
+              loading={generatingImages}
+              canGenerate={!!designSpec}
+              onGenerate={() => void generateImage()}
+              onProceedWithQuote={imageUrl ? handleProceedWithQuote : undefined}
             />
-          )}
+          </div>
         </div>
 
         {/* Materials tab */}
@@ -331,22 +374,18 @@ export default function KioskPage() {
           <SketchPad onSketchCapture={handleSketchCapture} />
         </div>
 
-        {/* Concepts tab */}
-        <div className={`h-full overflow-y-auto ${activeTab === "concepts" ? "block" : "hidden"}`}>
-          <ImageGallery
-            imageUrls={imageUrls}
-            loading={generatingImages}
-            onGenerateMore={() => void generateImages()}
-            canGenerate={!!designSpec}
-          />
-        </div>
-
         {/* Quote tab */}
         <div className={`h-full overflow-y-auto ${activeTab === "quote" ? "block" : "hidden"}`}>
-          {quote && sessionId ? (
+          {generatingQuote ? (
+            <div className="flex flex-col items-center justify-center gap-4 py-16">
+              <div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin" style={{ borderColor: "var(--color-primary)", borderTopColor: "transparent" }} />
+              <p className="text-stone-400 text-base">Calculating your quote…</p>
+            </div>
+          ) : quote && sessionId ? (
             <QuoteDisplay
               quote={quote}
               sessionId={sessionId}
+              renderImageUrl={imageUrl}
               onDownloadPdf={() => {}}
               onReset={() => void handleReset()}
             />
@@ -361,7 +400,8 @@ export default function KioskPage() {
                 <button
                   onClick={() => void generateQuote()}
                   disabled={generatingQuote}
-                  className="mt-2 bg-gold-600 hover:bg-gold-500 text-white rounded-xl px-6 py-3 font-semibold transition-colors"
+                  className="mt-2 text-white rounded-xl px-6 py-3 font-semibold transition-colors"
+                  style={{ backgroundColor: "var(--color-button)" }}
                 >
                   {generatingQuote ? "Calculating…" : "📋 Generate Quote"}
                 </button>
@@ -375,7 +415,7 @@ export default function KioskPage() {
       {designSpec && activeTab !== "quote" && (
         <div className="flex-shrink-0 px-4 py-2 bg-stone-900 border-t border-stone-800">
           <div className="flex items-center gap-2 text-xs text-stone-500 overflow-x-auto whitespace-nowrap">
-            <span className="text-gold-600">✦</span>
+            <span style={{ color: "var(--color-primary)" }}>✦</span>
             {designSpec.metal && (
               <span className="bg-stone-800 rounded-full px-2 py-1 text-stone-300">
                 {designSpec.metal.type.replace("_", " ")}
@@ -398,8 +438,9 @@ export default function KioskPage() {
             )}
             {quoteReady && !quote && (
               <button
-                onClick={() => void generateQuote()}
-                className="ml-auto flex-shrink-0 bg-gold-700 text-gold-200 rounded-full px-3 py-1 text-xs font-medium"
+                onClick={() => handleTabChange("quote")}
+                className="ml-auto flex-shrink-0 rounded-full px-3 py-1 text-xs font-medium"
+                style={{ backgroundColor: "var(--color-button)", color: "white" }}
               >
                 Get Quote →
               </button>
@@ -415,3 +456,5 @@ export default function KioskPage() {
     </div>
   );
 }
+
+

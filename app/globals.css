@@ -2,10 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --color-primary: #d4920f;
+  --color-accent: #e8ad22;
+  --color-background: #0c0a09;
+  --color-button: #b5720b;
+}
+
 html, body {
   touch-action: manipulation;
   -webkit-user-select: none;
   user-select: none;
+  background-color: var(--color-background);
 }
 
 .kiosk-no-nav {
@@ -30,3 +38,10 @@ button {
   background: #44403c;
   border-radius: 3px;
 }
+
+/* Theme-aware utility classes */
+.theme-primary { color: var(--color-primary); }
+.theme-accent { color: var(--color-accent); }
+.theme-bg { background-color: var(--color-background); }
+.theme-btn { background-color: var(--color-button); }
+.theme-border-primary { border-color: var(--color-primary); }

@@ -28,7 +28,8 @@ export async function POST(
     }
 
     const spec = parsedSpec.data;
-    const prompts = spec.imagePrompts.slice(0, 3);
+    // Generate exactly one image using the first available prompt
+    const prompts = spec.imagePrompts.slice(0, 1);
 
     if (prompts.length === 0) {
       return NextResponse.json({ error: "No image prompts in design spec" }, { status: 400 });

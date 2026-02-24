@@ -39,3 +39,15 @@ model AdminEvent {
   payload   String
   createdAt DateTime @default(now())
 }
+
+model QuoteSubmission {
+  id             String   @id @default(cuid())
+  sessionId      String
+  customerName   String
+  customerEmail  String
+  designSpecJson String
+  renderImageUrl String?
+  priceEstimate  Int
+  timestamp      DateTime @default(now())
+}
+

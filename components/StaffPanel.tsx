@@ -1,8 +1,44 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { z } from "zod";
 
 const MIN_PIN_LENGTH = 4;
+
+const DEFAULT_THEME = {
+  primary: "#d4920f",
+  accent: "#e8ad22",
+  background: "#0c0a09",
+  button: "#b5720b",
+};
+
+// Validate hex colour value to prevent malicious data from localStorage
+const HexColour = z.string().regex(/^#[0-9a-fA-F]{3,8}$/);
+const ThemeSchema = z.object({
+  primary: HexColour,
+  accent: HexColour,
+  background: HexColour,
+  button: HexColour,
+}).partial();
+
+function applyTheme(theme: typeof DEFAULT_THEME) {
+  const root = document.documentElement;
+  root.style.setProperty("--color-primary", theme.primary);
+  root.style.setProperty("--color-accent", theme.accent);
+  root.style.setProperty("--color-background", theme.background);
+  root.style.setProperty("--color-button", theme.button);
+}
+
+function loadTheme(): typeof DEFAULT_THEME {
+  try {
+    const stored = localStorage.getItem("kiosk_theme");
+    if (stored) {
+      const parsed = ThemeSchema.safeParse(JSON.parse(stored) as unknown);
+      if (parsed.success) return { ...DEFAULT_THEME, ...parsed.data };
+    }
+  } catch { /* ignore */ }
+  return DEFAULT_THEME;
+}
 
 interface DesignSpec {
   intentSummary?: string;
@@ -47,6 +83,33 @@ export default function StaffPanel({ sessionId, onClose }: StaffPanelProps) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [sessionData, setSessionData] = useState<StaffSession | null>(null);
+  const [activeSection, setActiveSection] = useState<"session" | "theme">("session");
+  const [theme, setTheme] = useState<typeof DEFAULT_THEME>(DEFAULT_THEME);
+  const [recipientEmail, setRecipientEmail] = useState("");
+
+  useEffect(() => {
+    const t = loadTheme();
+    setTheme(t);
+    const stored = localStorage.getItem("staff_recipient_email") ?? "";
+    setRecipientEmail(stored);
+  }, []);
+
+  const handleThemeChange = (key: keyof typeof DEFAULT_THEME, value: string) => {
+    const updated = { ...theme, [key]: value };
+    setTheme(updated);
+    localStorage.setItem("kiosk_theme", JSON.stringify(updated));
+    applyTheme(updated);
+  };
+
+  const handleResetTheme = () => {
+    setTheme(DEFAULT_THEME);
+    localStorage.removeItem("kiosk_theme");
+    applyTheme(DEFAULT_THEME);
+  };
+
+  const handleSaveRecipientEmail = () => {
+    localStorage.setItem("staff_recipient_email", recipientEmail.trim());
+  };
 
   const handleUnlock = async () => {
     if (pin.length < 4) return;
@@ -66,7 +129,6 @@ export default function StaffPanel({ sessionId, onClose }: StaffPanelProps) {
         return;
       }
 
-      // Fetch session data
       const dataRes = await fetch(`/api/admin/session/${sessionId}`);
       if (dataRes.ok) {
         const data = await dataRes.json() as { session: StaffSession };
@@ -154,83 +216,168 @@ export default function StaffPanel({ sessionId, onClose }: StaffPanelProps) {
         ) : (
           <div className="p-6 space-y-5">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gold-400">Session Details</h2>
+              <h2 className="text-xl font-bold text-gold-400">Staff Panel</h2>
               <button onClick={onClose} className="text-stone-500 hover:text-stone-300 text-2xl">×</button>
             </div>
 
-            <div className="bg-stone-800 rounded-xl p-4">
-              <p className="text-stone-400 text-xs mb-1">Session ID</p>
-              <p className="text-stone-200 font-mono text-sm">{sessionId}</p>
+            {/* Section tabs */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setActiveSection("session")}
+                className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${activeSection === "session" ? "bg-gold-700 text-white" : "bg-stone-800 text-stone-400 hover:bg-stone-700"}`}
+              >
+                Session
+              </button>
+              <button
+                onClick={() => setActiveSection("theme")}
+                className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${activeSection === "theme" ? "bg-gold-700 text-white" : "bg-stone-800 text-stone-400 hover:bg-stone-700"}`}
+              >
+                🎨 Theme & Settings
+              </button>
             </div>
 
-            {sessionData?.designSpec && (
-              <div className="bg-stone-800 rounded-xl p-4 space-y-2">
-                <h3 className="text-gold-400 font-semibold text-sm uppercase tracking-widest">Design Spec</h3>
-                {sessionData.designSpec.intentSummary && (
-                  <p className="text-stone-300 text-sm">{sessionData.designSpec.intentSummary}</p>
-                )}
-                <div className="grid grid-cols-2 gap-2 text-xs mt-3">
-                  {sessionData.designSpec.metal && (
-                    <>
-                      <span className="text-stone-500">Metal:</span>
-                      <span className="text-stone-200">{sessionData.designSpec.metal.type}</span>
-                    </>
-                  )}
-                  {sessionData.designSpec.ringSize && (
-                    <>
-                      <span className="text-stone-500">Ring Size:</span>
-                      <span className="text-stone-200">{sessionData.designSpec.ringSize.system} {sessionData.designSpec.ringSize.value}</span>
-                    </>
-                  )}
-                  {sessionData.designSpec.complexity && (
-                    <>
-                      <span className="text-stone-500">Complexity:</span>
-                      <span className="text-stone-200">{sessionData.designSpec.complexity}</span>
-                    </>
-                  )}
+            {/* Session view */}
+            {activeSection === "session" && (
+              <>
+                <div className="bg-stone-800 rounded-xl p-4">
+                  <p className="text-stone-400 text-xs mb-1">Session ID</p>
+                  <p className="text-stone-200 font-mono text-sm">{sessionId}</p>
                 </div>
-              </div>
-            )}
 
-            {sessionData?.quote?.staffOnlyCosting && (
-              <div className="bg-red-950/30 border border-red-900/50 rounded-xl p-4 space-y-2">
-                <h3 className="text-red-400 font-semibold text-sm uppercase tracking-widest">Cost Breakdown (Staff Only)</h3>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  {[
-                    ["Metal Cost", `£${sessionData.quote.staffOnlyCosting.metalCost}`],
-                    ["Stone Cost", `£${sessionData.quote.staffOnlyCosting.stoneCost}`],
-                    ["Labour", `£${sessionData.quote.staffOnlyCosting.labourCost}`],
-                    ["Overhead", `£${sessionData.quote.staffOnlyCosting.overhead}`],
-                    ["Total Cost", `£${sessionData.quote.staffOnlyCosting.totalCost}`],
-                    ["Retail Price", `£${sessionData.quote.retailPriceGBP}`],
-                  ].map(([label, value], idx) => (
-                    <React.Fragment key={idx}>
-                      <span className="text-stone-500">{label}:</span>
-                      <span className="text-stone-200 font-medium">{value}</span>
-                    </React.Fragment>
-                  ))}
-                </div>
-                <div className="mt-3 space-y-1">
-                  {sessionData.quote.staffOnlyCosting.assumptions.map((a, i) => (
-                    <p key={i} className="text-stone-600 text-xs">• {a}</p>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="bg-stone-800 rounded-xl p-4">
-              <h3 className="text-gold-400 font-semibold text-sm uppercase tracking-widest mb-2">Conversation</h3>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {sessionData?.transcript.map((msg, i) => (
-                  <div key={i} className="text-xs">
-                    <span className={`font-medium ${msg.role === "user" ? "text-gold-400" : "text-stone-400"}`}>
-                      {msg.role === "user" ? "Customer: " : "Assistant: "}
-                    </span>
-                    <span className="text-stone-300 whitespace-pre-wrap">{msg.content.slice(0, 200)}{msg.content.length > 200 ? "…" : ""}</span>
+                {sessionData?.designSpec && (
+                  <div className="bg-stone-800 rounded-xl p-4 space-y-2">
+                    <h3 className="text-gold-400 font-semibold text-sm uppercase tracking-widest">Design Spec</h3>
+                    {sessionData.designSpec.intentSummary && (
+                      <p className="text-stone-300 text-sm">{sessionData.designSpec.intentSummary}</p>
+                    )}
+                    <div className="grid grid-cols-2 gap-2 text-xs mt-3">
+                      {sessionData.designSpec.metal && (
+                        <>
+                          <span className="text-stone-500">Metal:</span>
+                          <span className="text-stone-200">{sessionData.designSpec.metal.type}</span>
+                        </>
+                      )}
+                      {sessionData.designSpec.ringSize && (
+                        <>
+                          <span className="text-stone-500">Ring Size:</span>
+                          <span className="text-stone-200">{sessionData.designSpec.ringSize.system} {sessionData.designSpec.ringSize.value}</span>
+                        </>
+                      )}
+                      {sessionData.designSpec.complexity && (
+                        <>
+                          <span className="text-stone-500">Complexity:</span>
+                          <span className="text-stone-200">{sessionData.designSpec.complexity}</span>
+                        </>
+                      )}
+                    </div>
                   </div>
-                ))}
+                )}
+
+                {sessionData?.quote?.staffOnlyCosting && (
+                  <div className="bg-red-950/30 border border-red-900/50 rounded-xl p-4 space-y-2">
+                    <h3 className="text-red-400 font-semibold text-sm uppercase tracking-widest">Cost Breakdown (Staff Only)</h3>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      {[
+                        ["Metal Cost", `£${sessionData.quote.staffOnlyCosting.metalCost}`],
+                        ["Stone Cost", `£${sessionData.quote.staffOnlyCosting.stoneCost}`],
+                        ["Labour", `£${sessionData.quote.staffOnlyCosting.labourCost}`],
+                        ["Overhead", `£${sessionData.quote.staffOnlyCosting.overhead}`],
+                        ["Total Cost", `£${sessionData.quote.staffOnlyCosting.totalCost}`],
+                        ["Retail Price", `£${sessionData.quote.retailPriceGBP}`],
+                      ].map(([label, value], idx) => (
+                        <React.Fragment key={idx}>
+                          <span className="text-stone-500">{label}:</span>
+                          <span className="text-stone-200 font-medium">{value}</span>
+                        </React.Fragment>
+                      ))}
+                    </div>
+                    <div className="mt-3 space-y-1">
+                      {sessionData.quote.staffOnlyCosting.assumptions.map((a, i) => (
+                        <p key={i} className="text-stone-600 text-xs">• {a}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="bg-stone-800 rounded-xl p-4">
+                  <h3 className="text-gold-400 font-semibold text-sm uppercase tracking-widest mb-2">Conversation</h3>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {sessionData?.transcript.map((msg, i) => (
+                      <div key={i} className="text-xs">
+                        <span className={`font-medium ${msg.role === "user" ? "text-gold-400" : "text-stone-400"}`}>
+                          {msg.role === "user" ? "Customer: " : "Assistant: "}
+                        </span>
+                        <span className="text-stone-300 whitespace-pre-wrap">{msg.content.slice(0, 200)}{msg.content.length > 200 ? "…" : ""}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Theme & Settings view */}
+            {activeSection === "theme" && (
+              <div className="space-y-4">
+                {/* Recipient email */}
+                <div className="bg-stone-800 rounded-xl p-4 space-y-3">
+                  <h3 className="text-gold-400 font-semibold text-sm uppercase tracking-widest">Quote Recipient Email</h3>
+                  <p className="text-stone-500 text-xs">Email address that receives submitted quote requests.</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="email"
+                      value={recipientEmail}
+                      onChange={(e) => setRecipientEmail(e.target.value)}
+                      placeholder="staff@yourshop.com"
+                      className="flex-1 bg-stone-700 border border-stone-600 rounded-xl px-3 py-2 text-stone-100 placeholder-stone-500 text-sm focus:outline-none"
+                      style={{ userSelect: "text", WebkitUserSelect: "text" }}
+                    />
+                    <button
+                      onClick={handleSaveRecipientEmail}
+                      className="bg-gold-700 hover:bg-gold-600 text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+
+                {/* Theme colours */}
+                <div className="bg-stone-800 rounded-xl p-4 space-y-4">
+                  <h3 className="text-gold-400 font-semibold text-sm uppercase tracking-widest">Colour Theme</h3>
+                  <p className="text-stone-500 text-xs">Changes apply instantly and persist across sessions.</p>
+
+                  {([
+                    ["primary", "Primary Colour", "Headings and accents"],
+                    ["accent", "Accent Colour", "Secondary highlights"],
+                    ["background", "Background Colour", "Main background"],
+                    ["button", "Button Colour", "Action buttons"],
+                  ] as [keyof typeof DEFAULT_THEME, string, string][]).map(([key, label, desc]) => (
+                    <div key={key} className="flex items-center justify-between gap-3">
+                      <div className="flex-1">
+                        <p className="text-stone-200 text-sm font-medium">{label}</p>
+                        <p className="text-stone-500 text-xs">{desc}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-stone-400 text-xs font-mono">{theme[key]}</span>
+                        <input
+                          type="color"
+                          value={theme[key]}
+                          onChange={(e) => handleThemeChange(key, e.target.value)}
+                          className="w-10 h-10 rounded-lg border border-stone-600 cursor-pointer bg-transparent"
+                          style={{ padding: "2px" }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+
+                  <button
+                    onClick={handleResetTheme}
+                    className="w-full bg-stone-700 hover:bg-stone-600 text-stone-300 rounded-xl py-2 text-sm font-medium transition-colors mt-2"
+                  >
+                    Reset to Defaults
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             <button
               onClick={onClose}
@@ -244,3 +391,4 @@ export default function StaffPanel({ sessionId, onClose }: StaffPanelProps) {
     </div>
   );
 }
+
