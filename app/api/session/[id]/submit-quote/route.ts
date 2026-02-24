@@ -18,8 +18,8 @@ function escHtml(str: string): string {
 }
 
 const SubmitQuoteSchema = z.object({
-  customerName: z.string().min(1).max(200),
-  customerEmail: z.string().email(),
+  customerName: z.string().min(1).max(200).optional(),
+  customerEmail: z.string().email().optional(),
   renderImageUrl: z.string().optional(),
   recipientEmail: z.string().email().optional(),
 });
@@ -46,7 +46,7 @@ export async function POST(
       return NextResponse.json({ error: "Invalid fields", details: parsed.error.issues }, { status: 400 });
     }
 
-    const { customerName, customerEmail, renderImageUrl, recipientEmail } = parsed.data;
+    const { renderImageUrl, recipientEmail } = parsed.data;
 
     // Parse and validate the design spec
     const parsedSpec = DesignSpecSchema.safeParse(JSON.parse(session.designSpec) as unknown);
@@ -54,17 +54,27 @@ export async function POST(
       return NextResponse.json({ error: "Invalid design spec" }, { status: 400 });
     }
 
+    // Resolve customer details: prefer body values, fall back to the existing Lead for this session
+    const existingLead = await prisma.lead.findUnique({ where: { sessionId: id } });
+    const customerName = parsed.data.customerName ?? existingLead?.firstName ?? "";
+    const customerEmail = parsed.data.customerEmail ?? existingLead?.email ?? "";
+    if (!customerName || !customerEmail) {
+      return NextResponse.json({ error: "Customer name and email are required" }, { status: 400 });
+    }
+
     // Always recompute quote fresh
     const quoteResult = await computeQuote(parsedSpec.data);
 
-    // Update session quote in DB
-    await prisma.session.update({
-      where: { id },
-      data: {
-        quote: JSON.stringify(quoteResult),
-        customerEmail,
-      },
-    });
+    // Update session quote + mark Lead as quoted
+    await Promise.all([
+      prisma.session.update({
+        where: { id },
+        data: { quote: JSON.stringify(quoteResult), customerEmail },
+      }),
+      existingLead
+        ? prisma.lead.update({ where: { id: existingLead.id }, data: { status: "quoted" } })
+        : Promise.resolve(),
+    ]);
 
     // Save QuoteSubmission to local SQLite
     await prisma.quoteSubmission.create({

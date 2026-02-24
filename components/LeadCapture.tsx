@@ -4,7 +4,7 @@ import { useState } from "react";
 
 interface LeadCaptureProps {
   sessionId: string;
-  onComplete: () => void;
+  onComplete: (firstName: string, email: string) => void;
 }
 
 export default function LeadCapture({ sessionId, onComplete }: LeadCaptureProps) {
@@ -37,7 +37,7 @@ export default function LeadCapture({ sessionId, onComplete }: LeadCaptureProps)
         throw new Error(data.error ?? "Failed to save details");
       }
 
-      onComplete();
+      onComplete(firstName.trim(), email.trim());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {

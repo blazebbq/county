@@ -19,13 +19,17 @@ interface QuoteDisplayProps {
   quote: CustomerQuote;
   sessionId: string;
   renderImageUrl?: string | null;
+  /** Passed from the lead capture step — when present the contact form is hidden */
+  leadFirstName?: string;
+  leadEmail?: string;
   onDownloadPdf: () => void;
   onReset: () => void;
 }
 
-export default function QuoteDisplay({ quote, sessionId, renderImageUrl, onDownloadPdf, onReset }: QuoteDisplayProps) {
-  const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
+export default function QuoteDisplay({ quote, sessionId, renderImageUrl, leadFirstName, leadEmail, onDownloadPdf, onReset }: QuoteDisplayProps) {
+  // If lead data was already captured, pre-fill and lock the form
+  const [customerName, setCustomerName] = useState(leadFirstName ?? "");
+  const [customerEmail, setCustomerEmail] = useState(leadEmail ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [submitSuccess, setSubmitSuccess] = useState(false);
@@ -136,33 +140,42 @@ export default function QuoteDisplay({ quote, sessionId, renderImageUrl, onDownl
         <p className="text-stone-500 text-xs leading-relaxed">{quote.estimateDisclaimer}</p>
       </div>
 
-      {/* Customer details form */}
+      {/* Customer details form — hidden when lead was already captured */}
       <div className="bg-stone-800/50 rounded-xl border border-stone-700 p-4 space-y-3">
         <h3 className="font-semibold text-sm uppercase tracking-widest mb-1" style={{ color: "var(--color-accent)" }}>
           Your Details
         </h3>
-        <div>
-          <label className="block text-stone-400 text-xs mb-1">Your Name *</label>
-          <input
-            type="text"
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-            placeholder="Full name"
-            className="w-full bg-stone-800 border border-stone-600 rounded-xl px-4 py-3 text-stone-100 placeholder-stone-500 focus:outline-none focus:border-gold-500 text-base transition-colors"
-            style={{ userSelect: "text", WebkitUserSelect: "text" }}
-          />
-        </div>
-        <div>
-          <label className="block text-stone-400 text-xs mb-1">Email Address *</label>
-          <input
-            type="email"
-            value={customerEmail}
-            onChange={(e) => setCustomerEmail(e.target.value)}
-            placeholder="your@email.com"
-            className="w-full bg-stone-800 border border-stone-600 rounded-xl px-4 py-3 text-stone-100 placeholder-stone-500 focus:outline-none focus:border-gold-500 text-base transition-colors"
-            style={{ userSelect: "text", WebkitUserSelect: "text" }}
-          />
-        </div>
+        {leadFirstName && leadEmail ? (
+          // Lead already captured — show read-only summary
+          <p className="text-stone-300 text-sm">
+            Submitting as <strong>{leadFirstName}</strong> ({leadEmail})
+          </p>
+        ) : (
+          <>
+            <div>
+              <label className="block text-stone-400 text-xs mb-1">Your Name *</label>
+              <input
+                type="text"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Full name"
+                className="w-full bg-stone-800 border border-stone-600 rounded-xl px-4 py-3 text-stone-100 placeholder-stone-500 focus:outline-none focus:border-gold-500 text-base transition-colors"
+                style={{ userSelect: "text", WebkitUserSelect: "text" }}
+              />
+            </div>
+            <div>
+              <label className="block text-stone-400 text-xs mb-1">Email Address *</label>
+              <input
+                type="email"
+                value={customerEmail}
+                onChange={(e) => setCustomerEmail(e.target.value)}
+                placeholder="your@email.com"
+                className="w-full bg-stone-800 border border-stone-600 rounded-xl px-4 py-3 text-stone-100 placeholder-stone-500 focus:outline-none focus:border-gold-500 text-base transition-colors"
+                style={{ userSelect: "text", WebkitUserSelect: "text" }}
+              />
+            </div>
+          </>
+        )}
         {submitError && (
           <p className="text-red-400 text-sm">{submitError}</p>
         )}

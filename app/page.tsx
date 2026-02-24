@@ -74,6 +74,9 @@ export default function KioskPage() {
   const [pendingSketch, setPendingSketch] = useState<string | null>(null);
   const [chatMessage, setChatMessage] = useState<string | null>(null);
   const [quoteReady, setQuoteReady] = useState(false);
+  // Lead details captured once at session start — reused for quote submission
+  const [leadFirstName, setLeadFirstName] = useState<string | null>(null);
+  const [leadEmail, setLeadEmail] = useState<string | null>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const staffTapCount = useRef(0);
   const staffTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -116,6 +119,8 @@ export default function KioskPage() {
       setQuote(null);
       setImageUrl(null);
       setQuoteReady(false);
+      setLeadFirstName(null);
+      setLeadEmail(null);
       setSuggestedQuestions([
         "I'm looking for an engagement ring",
         "I want something modern and minimalist",
@@ -139,6 +144,8 @@ export default function KioskPage() {
     setSuggestedQuestions([]);
     setPendingSketch(null);
     setChatMessage(null);
+    setLeadFirstName(null);
+    setLeadEmail(null);
   }, [sessionId]);
 
   const handleDesignSpecUpdate = useCallback((spec: DesignSpec) => {
@@ -301,7 +308,11 @@ export default function KioskPage() {
             Cancel
           </button>
         </header>
-        <LeadCapture sessionId={sessionId} onComplete={() => setPhase("active")} />
+        <LeadCapture sessionId={sessionId} onComplete={(firstName, email) => {
+          setLeadFirstName(firstName);
+          setLeadEmail(email);
+          setPhase("active");
+        }} />
       </div>
     );
   }
@@ -412,6 +423,8 @@ export default function KioskPage() {
               quote={quote}
               sessionId={sessionId}
               renderImageUrl={imageUrl}
+              leadFirstName={leadFirstName ?? undefined}
+              leadEmail={leadEmail ?? undefined}
               onDownloadPdf={() => {}}
               onReset={() => void handleReset()}
             />

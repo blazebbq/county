@@ -35,7 +35,7 @@ export async function POST(
       return NextResponse.json({ error: "No image prompts in design spec" }, { status: 400 });
     }
 
-    const client = getOpenAIClient();
+    const client = getOpenAIClient(); // throws if OPENAI_API_KEY missing
     const generatedUrls: string[] = [];
     const uploadsDir = join(process.cwd(), "public", "uploads", id);
     await mkdir(uploadsDir, { recursive: true });
@@ -98,6 +98,10 @@ export async function POST(
       } catch (err) {
         console.log(JSON.stringify({ level: "warn", event: "image_gen_failed", prompt: prompt.slice(0, 50), error: String(err) }));
       }
+    }
+
+    if (generatedUrls.length === 0) {
+      return NextResponse.json({ error: "Image generation failed. Please try again." }, { status: 500 });
     }
 
     const existingRefs: string[] = JSON.parse(session.imageRefs || "[]") as string[];
