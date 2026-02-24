@@ -2,6 +2,8 @@
 
 import React, { useState } from "react";
 
+const MIN_PIN_LENGTH = 4;
+
 interface DesignSpec {
   intentSummary?: string;
   metal?: { type: string; finish: string } | null;
@@ -96,7 +98,7 @@ export default function StaffPanel({ sessionId, onClose }: StaffPanelProps) {
 
             {/* PIN display */}
             <div className="flex justify-center gap-3 mb-6">
-              {Array.from({ length: Math.max(4, pin.length) }).map((_, i) => (
+              {Array.from({ length: Math.max(MIN_PIN_LENGTH, pin.length) }).map((_, i) => (
                 <div
                   key={i}
                   className={`w-12 h-12 rounded-xl border-2 flex items-center justify-center text-2xl transition-colors ${
@@ -142,7 +144,7 @@ export default function StaffPanel({ sessionId, onClose }: StaffPanelProps) {
               </button>
               <button
                 onClick={() => void handleUnlock()}
-                disabled={pin.length < 4 || loading}
+                disabled={pin.length < MIN_PIN_LENGTH || loading}
                 className="flex-1 bg-gold-600 hover:bg-gold-500 disabled:opacity-40 text-white rounded-xl py-3 font-semibold transition-colors"
               >
                 {loading ? "Checking…" : "Unlock"}

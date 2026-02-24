@@ -7,6 +7,8 @@ interface MetalSpotCache {
 
 let cache: MetalSpotCache | null = null;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+// When using fallback rates, expire sooner so we retry the live feed more quickly
+const FALLBACK_CACHE_GRACE_PERIOD_MS = 5 * 60 * 1000; // 5 minutes
 
 export async function getMetalSpotRates(): Promise<Record<string, number>> {
   const now = Date.now();
@@ -42,7 +44,7 @@ export async function getMetalSpotRates(): Promise<Record<string, number>> {
 
   const fallback = pricingConfig.metalSpotFallbackGBPPerGram as Record<string, number>;
   if (!cache) {
-    cache = { rates: fallback, fetchedAt: now - CACHE_TTL_MS + 300_000 };
+    cache = { rates: fallback, fetchedAt: now - CACHE_TTL_MS + FALLBACK_CACHE_GRACE_PERIOD_MS };
   }
   return cache?.rates ?? fallback;
 }

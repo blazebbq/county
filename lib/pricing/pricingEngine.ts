@@ -103,7 +103,9 @@ export async function computeQuote(spec: DesignSpec): Promise<QuoteResult> {
   let metalCost = 0;
   if (spec.metal && spec.estimatedGoldWeightGrams) {
     const baseId = getMetalBaseId(spec.metal.type);
-    const spotGBPPerGram = spotRates[baseId] ?? (config.metalSpotFallbackGBPPerGram as Record<string, number>)[baseId] ?? 58.5;
+    // Last-resort hardcoded fallback (gold ~£58.50/g) if both spot feed and config are missing
+    const DEFAULT_GOLD_SPOT_GBP_PER_GRAM = 58.5;
+    const spotGBPPerGram = spotRates[baseId] ?? (config.metalSpotFallbackGBPPerGram as Record<string, number>)[baseId] ?? DEFAULT_GOLD_SPOT_GBP_PER_GRAM;
     const purity = (config.metalPurityMultiplier as Record<string, number>)[spec.metal.type] ?? 0.585;
     const avgWeightG = (spec.estimatedGoldWeightGrams.min + spec.estimatedGoldWeightGrams.max) / 2;
     const rawMetalCost = avgWeightG * purity * spotGBPPerGram;

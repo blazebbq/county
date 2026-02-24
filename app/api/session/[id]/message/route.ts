@@ -11,6 +11,8 @@ const RequestSchema = z.object({
   imageDataUrls: z.array(z.string().startsWith("data:")).max(3).optional(),
 });
 
+const MAX_MESSAGES_PER_SESSION = 40;
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -24,7 +26,7 @@ export async function POST(
     }
 
     const transcript: ChatMessage[] = JSON.parse(session.transcript || "[]") as ChatMessage[];
-    if (transcript.length > 40) {
+    if (transcript.length > MAX_MESSAGES_PER_SESSION) {
       return NextResponse.json({ error: "Session message limit reached" }, { status: 429 });
     }
 

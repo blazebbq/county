@@ -157,12 +157,13 @@ export default function KioskPage() {
     setActiveTab("chat");
   }, []);
 
-  // Staff panel: triple-tap on logo
+  // Staff panel: tap logo 5 times quickly to reveal unlock panel
+  const STAFF_UNLOCK_TAP_COUNT = 5;
   const handleLogoTap = () => {
     staffTapCount.current += 1;
     if (staffTapTimer.current) clearTimeout(staffTapTimer.current);
     staffTapTimer.current = setTimeout(() => { staffTapCount.current = 0; }, 1500);
-    if (staffTapCount.current >= 5) {
+    if (staffTapCount.current >= STAFF_UNLOCK_TAP_COUNT) {
       staffTapCount.current = 0;
       if (sessionId) setShowStaffPanel(true);
     }
