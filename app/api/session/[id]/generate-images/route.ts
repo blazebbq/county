@@ -50,11 +50,9 @@ export async function POST(
           prompt: `Professional jewellery photography: ${prompt}. White background, studio lighting, photorealistic, high detail.`,
           n: 1,
           size: "1024x1024",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          response_format: "b64_json" as any, // required for gpt-image-1 to return base64
         });
 
-        // gpt-image-1 always returns b64_json
+        // gpt-image-1 returns b64_json by default (no response_format param needed)
         const b64 = response.data?.[0]?.b64_json;
         if (b64) {
           const buffer = Buffer.from(b64, "base64");
