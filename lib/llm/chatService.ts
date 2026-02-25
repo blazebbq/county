@@ -6,7 +6,7 @@ import { join } from "path";
 
 // Log model configuration at module load time (server startup)
 const TEXT_MODEL = process.env.OPENAI_MODEL ?? "gpt-5-mini";
-const MAX_OUTPUT_TOKENS = 1500;
+const MAX_OUTPUT_TOKENS = 4000;
 console.log(JSON.stringify({ level: "info", event: "model_config", textModel: TEXT_MODEL, imageModel: "gpt-image-1" }));
 
 const SENSITIVE_PATTERNS = [

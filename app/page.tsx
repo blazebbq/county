@@ -465,9 +465,9 @@ export default function KioskPage() {
                 Size {designSpec.ringSize.system} {designSpec.ringSize.value}
               </span>
             )}
-            {designSpec.stones && designSpec.stones.kind !== "none" && (
+            {designSpec.stones && designSpec.stones.kind && designSpec.stones.kind !== "none" && (
               <span className="bg-stone-800 rounded-full px-2 py-1 text-stone-300">
-                {designSpec.stones.kind.replace("_", " ")} — {designSpec.stones.tier}
+                {designSpec.stones.kind.replace("_", " ")}{designSpec.stones.tier ? ` — ${designSpec.stones.tier}` : ""}
               </span>
             )}
             {designSpec.complexity && (

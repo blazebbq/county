@@ -67,10 +67,14 @@ function getStonePricePerUnit(kind: string, tier: string, caratEst: number): num
 function formatMetalName(metalType: string): string {
   const names: Record<string, string> = {
     "9k_yellow": "9ct Yellow Gold",
+    "9k_white": "9ct White Gold",
+    "9k_rose": "9ct Rose Gold",
     "14k_yellow": "14ct Yellow Gold",
-    "18k_yellow": "18ct Yellow Gold",
     "14k_white": "14ct White Gold",
+    "14k_rose": "14ct Rose Gold",
+    "18k_yellow": "18ct Yellow Gold",
     "18k_white": "18ct White Gold",
+    "18k_rose": "18ct Rose Gold",
     "sterling_silver": "925 Sterling Silver",
     "platinum_950": "Platinum 950",
   };
@@ -78,11 +82,11 @@ function formatMetalName(metalType: string): string {
 }
 
 function formatStonesDescription(spec: DesignSpec): string {
-  if (!spec.stones || spec.stones.kind === "none") return "No stones";
+  if (!spec.stones || !spec.stones.kind || spec.stones.kind === "none") return "No stones";
   const { kind, tier, list } = spec.stones;
   const totalCount = list.reduce((sum, s) => sum + s.count, 0);
   const kindName = kind === "lab_diamond" ? "Lab Diamond" : "Moissanite";
-  const tierName = tier.charAt(0).toUpperCase() + tier.slice(1);
+  const tierName = tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : "Standard";
   return `${totalCount}x ${kindName} (${tierName} quality)`;
 }
 
@@ -130,12 +134,14 @@ export async function computeQuote(spec: DesignSpec): Promise<QuoteResult> {
   }
 
   let stoneCost = 0;
-  if (spec.stones && spec.stones.kind !== "none" && spec.stones.list.length > 0) {
+  if (spec.stones && spec.stones.kind && spec.stones.kind !== "none" && spec.stones.list.length > 0) {
+    const stoneKind = spec.stones.kind;
+    const stoneTier = spec.stones.tier ?? "good";
     for (const stone of spec.stones.list) {
       const caratEst = mmToCaratEstimate(stone.sizeMm);
-      const pricePerUnit = getStonePricePerUnit(spec.stones.kind, spec.stones.tier, caratEst);
+      const pricePerUnit = getStonePricePerUnit(stoneKind, stoneTier, caratEst);
       stoneCost += pricePerUnit * stone.count;
-      assumptions.push(`Stone: ${stone.count}x ${stone.sizeMm}mm (${caratEst}ct est.) ${spec.stones.kind} ${spec.stones.tier} @ £${pricePerUnit.toFixed(0)}/unit`);
+      assumptions.push(`Stone: ${stone.count}x ${stone.sizeMm}mm (${caratEst}ct est.) ${stoneKind} ${stoneTier} @ £${pricePerUnit.toFixed(0)}/unit`);
     }
     stoneCost = Math.round(stoneCost);
   } else {
