@@ -1,0 +1,102 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  status        String   @default("active")
+  customerEmail String?
+  transcript    String   @default("[]")
+  designSpec    String?
+  quote         String?
+  imageRefs     String   @default("[]")
+  assets        UploadedAsset[]
+  adminEvents   AdminEvent[]
+  lead          Lead?
+}
+
+model UploadedAsset {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id])
+  type      String
+  path      String
+  mimeType  String
+  createdAt DateTime @default(now())
+}
+
+model AdminEvent {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id])
+  type      String
+  payload   String
+  createdAt DateTime @default(now())
+}
+
+model QuoteSubmission {
+  id             String   @id @default(cuid())
+  sessionId      String
+  customerName   String
+  customerEmail  String
+  designSpecJson String
+  renderImageUrl String?
+  priceEstimate  Int
+  timestamp      DateTime @default(now())
+}
+
+model PdfTemplateSettings {
+  id                         String   @id @default("default")
+  shopName                   String
+  shopAddress                String
+  shopPhone                  String
+  shopEmail                  String
+  documentTitle              String
+  headingDesignSpecification String
+  headingPriceEstimate       String
+  labelDescription           String
+  labelMetal                 String
+  labelRingSize              String
+  labelStones                String
+  labelStyle                 String
+  labelComplexity            String
+  labelEstimatedPrice        String
+  labelRange                 String
+  labelLeadTime              String
+  disclaimerText             String
+  vatText                    String
+  notificationEmail          String   @default("")
+  updatedAt                  DateTime @updatedAt
+}
+
+model MetalRateCache {
+  id                String   @id @default("default")
+  goldGBPPerGram24k Float
+  silverGBPPerGram  Float    @default(0)
+  platinumGBPPerGram Float   @default(0)
+  source            String
+  updatedAt         DateTime @updatedAt
+}
+
+model Lead {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  firstName String
+  email     String
+  phone     String
+
+  sessionId String  @unique
+  session   Session @relation(fields: [sessionId], references: [id])
+
+  status    String  @default("new")
+}
+

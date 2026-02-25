@@ -1,0 +1,30 @@
+{
+  "metalPremiumPercent": 12,
+  "scrapLossPercent": 8,
+  "overheadBuffer": 60,
+  "vatIncludedInRetail": true,
+  "labourRates": {
+    "simple": 120,
+    "medium": 220,
+    "complex": 350,
+    "pavePerStone": 8
+  },
+  "metalSpotFallbackGBPPerGram": {
+    "24k_gold": 58.50,
+    "sterling_silver": 0.65,
+    "platinum": 28.00
+  },
+  "metalPurityMultiplier": {
+    "9k_yellow": 0.375,
+    "9k_white": 0.375,
+    "9k_rose": 0.375,
+    "14k_yellow": 0.585,
+    "14k_white": 0.585,
+    "14k_rose": 0.585,
+    "18k_yellow": 0.750,
+    "18k_white": 0.750,
+    "18k_rose": 0.750,
+    "sterling_silver": 1.0,
+    "platinum_950": 1.0
+  }
+}
