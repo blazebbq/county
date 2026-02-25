@@ -36,6 +36,7 @@ export async function POST(
     }
 
     const client = getOpenAIClient(); // throws if OPENAI_API_KEY missing
+    const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1";
     const generatedUrls: string[] = [];
     const uploadsDir = join(process.cwd(), "public", "uploads", id);
     await mkdir(uploadsDir, { recursive: true });
@@ -45,7 +46,7 @@ export async function POST(
         // gpt-image-1 uses response_format: "b64_json" (returns base64-encoded PNG data).
         // The API accepts response_format on the images.generate call for this model.
         const response = await client.images.generate({
-          model: "gpt-image-1",
+          model: IMAGE_MODEL,
           prompt: `Professional jewellery photography: ${prompt}. White background, studio lighting, photorealistic, high detail.`,
           n: 1,
           size: "1024x1024",
